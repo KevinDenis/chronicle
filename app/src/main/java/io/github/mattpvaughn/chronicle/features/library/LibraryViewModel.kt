@@ -7,8 +7,10 @@ import io.github.mattpvaughn.chronicle.R
 import io.github.mattpvaughn.chronicle.application.Injector
 import io.github.mattpvaughn.chronicle.data.local.IBookRepository
 import io.github.mattpvaughn.chronicle.data.local.ITrackRepository
+import io.github.mattpvaughn.chronicle.data.local.LibrarySyncRepository
 import io.github.mattpvaughn.chronicle.data.local.PrefsRepo
 import io.github.mattpvaughn.chronicle.data.local.PrefsRepo.Companion.KEY_BOOK_SORT_BY
+import io.github.mattpvaughn.chronicle.data.local.PrefsRepo.Companion.KEY_HIDE_PLAYED_AUDIOBOOKS
 import io.github.mattpvaughn.chronicle.data.local.PrefsRepo.Companion.KEY_IS_LIBRARY_SORT_DESCENDING
 import io.github.mattpvaughn.chronicle.data.local.PrefsRepo.Companion.KEY_LIBRARY_VIEW_STYLE
 import io.github.mattpvaughn.chronicle.data.local.PrefsRepo.Companion.KEY_OFFLINE_MODE
@@ -19,12 +21,11 @@ import io.github.mattpvaughn.chronicle.data.model.Audiobook.Companion.SORT_KEY_D
 import io.github.mattpvaughn.chronicle.data.model.Audiobook.Companion.SORT_KEY_DURATION
 import io.github.mattpvaughn.chronicle.data.model.Audiobook.Companion.SORT_KEY_PLAYS
 import io.github.mattpvaughn.chronicle.data.model.Audiobook.Companion.SORT_KEY_TITLE
+import io.github.mattpvaughn.chronicle.data.model.Audiobook.Companion.SORT_KEY_YEAR
 import io.github.mattpvaughn.chronicle.data.model.MediaItemTrack
-import io.github.mattpvaughn.chronicle.data.model.getProgress
 import io.github.mattpvaughn.chronicle.data.sources.plex.ICachedFileManager
 import io.github.mattpvaughn.chronicle.data.sources.plex.ICachedFileManager.CacheStatus.CACHED
 import io.github.mattpvaughn.chronicle.data.sources.plex.ICachedFileManager.CacheStatus.NOT_CACHED
-import io.github.mattpvaughn.chronicle.data.sources.plex.model.getDuration
 import io.github.mattpvaughn.chronicle.util.*
 import io.github.mattpvaughn.chronicle.views.BottomSheetChooser
 import io.github.mattpvaughn.chronicle.views.BottomSheetChooser.BottomChooserListener
@@ -40,6 +41,7 @@ class LibraryViewModel(
     private val trackRepository: ITrackRepository,
     private val prefsRepo: PrefsRepo,
     private val cachedFileManager: ICachedFileManager,
+    private val librarySyncRepository: LibrarySyncRepository,
     sharedPreferences: SharedPreferences
 ) : ViewModel() {
 
@@ -49,16 +51,18 @@ class LibraryViewModel(
         private val trackRepository: ITrackRepository,
         private val prefsRepo: PrefsRepo,
         private val cachedFileManager: ICachedFileManager,
-        private val sharedPreferences: SharedPreferences
+        private val librarySyncRepository: LibrarySyncRepository,
+        private val sharedPreferences: SharedPreferences,
     ) : ViewModelProvider.Factory {
-        override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(LibraryViewModel::class.java)) {
                 return LibraryViewModel(
                     bookRepository,
                     trackRepository,
                     prefsRepo,
                     cachedFileManager,
-                    sharedPreferences
+                    librarySyncRepository,
+                    sharedPreferences,
                 ) as T
             } else {
                 throw IllegalArgumentException("Cannot instantiate $modelClass from LibraryViewModel.Factory")
@@ -66,9 +70,7 @@ class LibraryViewModel(
         }
     }
 
-    private var _isRefreshing = MutableLiveData<Boolean>()
-    val isRefreshing: LiveData<Boolean>
-        get() = _isRefreshing
+    val isRefreshing = librarySyncRepository.isRefreshing
 
     private var _isSearchActive = MutableLiveData<Boolean>()
     val isSearchActive: LiveData<Boolean>
@@ -90,6 +92,12 @@ class LibraryViewModel(
         sharedPreferences
     )
 
+    val arePlayedAudiobooksHidden = BooleanPreferenceLiveData(
+        KEY_HIDE_PLAYED_AUDIOBOOKS,
+        false,
+        sharedPreferences
+    )
+
     private val sortKey =
         StringPreferenceLiveData(KEY_BOOK_SORT_BY, SORT_KEY_TITLE, sharedPreferences)
     val isOffline = BooleanPreferenceLiveData(KEY_OFFLINE_MODE, false, sharedPreferences)
@@ -97,46 +105,51 @@ class LibraryViewModel(
     private var prevBooks = emptyList<Audiobook>()
 
     private val allBooks = bookRepository.getAllBooks()
-    val books = QuadLiveDataAsync(
+    val books = QuintLiveDataAsync(
         viewModelScope,
         allBooks,
         isSortDescending,
         sortKey,
+        arePlayedAudiobooksHidden,
         isOffline
-    ) { _books, _isDescending, _sortKey, _isOffline ->
+    ) { _books, _isDescending, _sortKey, _hidePlayed, _isOffline ->
         if (_books.isNullOrEmpty()) {
-            return@QuadLiveDataAsync emptyList<Audiobook>()
+            return@QuintLiveDataAsync emptyList<Audiobook>()
         }
 
         // Use defaults if provided null values
         val desc = _isDescending ?: true
         val key = _sortKey ?: SORT_KEY_TITLE
+        val hidePlayed = _hidePlayed ?: false
         val offline = _isOffline ?: false
 
-        val results = _books.filter { !offline || it.isCached && offline }
-            .sortedWith(Comparator { book1, book2 ->
-                val descMultiplier = if (desc) 1 else -1
-                return@Comparator descMultiplier * when (key) {
-                    SORT_KEY_AUTHOR -> book1.author.compareTo(book2.author)
-                    SORT_KEY_TITLE -> book1.titleSort.compareTo(book2.titleSort)
-                    SORT_KEY_PLAYS -> book2.viewedLeafCount.compareTo(book1.viewedLeafCount)
-                    SORT_KEY_DURATION -> book2.duration.compareTo(book1.duration)
-                    // Note: Reverse order for timestamps, because most recent should be at the top
-                    // of descending, even though the timestamp is larger
-                    SORT_KEY_DATE_ADDED -> book2.addedAt.compareTo(book1.addedAt)
-                    SORT_KEY_DATE_PLAYED -> book2.lastViewedAt.compareTo(book1.lastViewedAt)
-                    else -> throw NoWhenBranchMatchedException("Unknown sort key: $key")
+        val results = _books.filter { (!offline || it.isCached && offline) && (!hidePlayed || hidePlayed && it.viewCount == 0L) }
+            .sortedWith(
+                Comparator { book1, book2 ->
+                    val descMultiplier = if (desc) 1 else -1
+                    return@Comparator descMultiplier * when (key) {
+                        SORT_KEY_AUTHOR -> book1.author.compareTo(book2.author)
+                        SORT_KEY_TITLE -> book1.titleSort.compareTo(book2.titleSort)
+                        SORT_KEY_PLAYS -> book2.viewedLeafCount.compareTo(book1.viewedLeafCount)
+                        SORT_KEY_DURATION -> book2.duration.compareTo(book1.duration)
+                        // Note: Reverse order for timestamps, because most recent should be at the top
+                        // of descending, even though the timestamp is larger
+                        SORT_KEY_DATE_ADDED -> book2.addedAt.compareTo(book1.addedAt)
+                        SORT_KEY_DATE_PLAYED -> book2.lastViewedAt.compareTo(book1.lastViewedAt)
+                        SORT_KEY_YEAR -> book2.year.compareTo(book1.year)
+                        else -> throw NoWhenBranchMatchedException("Unknown sort key: $key")
+                    }
                 }
-            })
+            )
 
         // If nothing has changed, return prevBooks
         if (prevBooks.map { it.id } == results.map { it.id }) {
-            return@QuadLiveDataAsync prevBooks
+            return@QuintLiveDataAsync prevBooks
         }
 
         prevBooks = results
 
-        return@QuadLiveDataAsync results
+        return@QuintLiveDataAsync results
     }
 
     private var _messageForUser = MutableLiveData<Event<String>>()
@@ -159,7 +172,7 @@ class LibraryViewModel(
     val tracks: LiveData<List<MediaItemTrack>>
         get() = _tracks
 
-    private val cacheStatus = Transformations.map(tracks) {
+    private val cacheStatus = tracks.map {
         when {
             it.isEmpty() -> NOT_CACHED
             it.all { track -> track.cached } -> CACHED
@@ -167,7 +180,6 @@ class LibraryViewModel(
             else -> NOT_CACHED
         }
     }
-
 
     fun setSearchActive(isSearchActive: Boolean) {
         _isSearchActive.postValue(isSearchActive)
@@ -179,9 +191,11 @@ class LibraryViewModel(
         if (query.isEmpty()) {
             _searchResults.postValue(emptyList())
         } else {
-            bookRepository.search(query).observeOnce(Observer {
-                _searchResults.postValue(it)
-            })
+            bookRepository.search(query).observeOnce(
+                Observer {
+                    _searchResults.postValue(it)
+                }
+            )
         }
     }
 
@@ -248,7 +262,8 @@ class LibraryViewModel(
                             else -> throw NoWhenBranchMatchedException()
                         }
                     }
-                })
+                }
+            )
         }
 
         // Prompt user to download
@@ -273,40 +288,8 @@ class LibraryViewModel(
         )
     }
 
-    /**
-     * Pull most recent data from server and update repositories.
-     *
-     * Update book info for fields where child tracks serve as source of truth, like how
-     * [Audiobook.duration] serves as a delegate for [List<MediaItemTrack>.getDuration()]
-     *
-     * TODO: maybe refresh data in the repository whenever a query is made? repeating code b/w
-     *       here and [HomeViewModel]
-     */
     fun refreshData() {
-        viewModelScope.launch(Injector.get().unhandledExceptionHandler()) {
-            try {
-                _isRefreshing.postValue(true)
-                bookRepository.refreshData()
-                trackRepository.refreshData()
-            } catch (e: Throwable) {
-                _messageForUser.postEvent("Failed to refresh data")
-            } finally {
-                _isRefreshing.postValue(false)
-            }
-
-            val audiobooks = bookRepository.getAllBooksAsync()
-            val tracks = trackRepository.getAllTracksAsync()
-            audiobooks.forEach { book ->
-                val tracksInAudiobook = tracks.filter { it.parentKey == book.id }
-                Timber.i("Book progress: ${tracksInAudiobook.getProgress()}")
-                bookRepository.updateTrackData(
-                    bookId = book.id,
-                    bookProgress = tracksInAudiobook.getProgress(),
-                    bookDuration = tracksInAudiobook.getDuration(),
-                    trackCount = tracksInAudiobook.size
-                )
-            }
-        }
+        librarySyncRepository.refreshLibrary()
     }
 
     /** Shows/hides the filter/sort/view menu to the user. Show if [isVisible] is true, hide otherwise */
@@ -321,4 +304,9 @@ class LibraryViewModel(
         prefsRepo.isLibrarySortedDescending = !prefsRepo.isLibrarySortedDescending
     }
 
+    /** Toggles whether to show or hide played audiobooks in the library */
+    fun toggleHidePlayedAudiobooks() {
+        Timber.i("toggleHidePlayedAudiobooks")
+        prefsRepo.hidePlayedAudiobooks = !prefsRepo.hidePlayedAudiobooks
+    }
 }

@@ -10,7 +10,6 @@ import io.github.mattpvaughn.chronicle.util.postEvent
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-
 class LoginViewModel(private val plexLoginRepo: IPlexLoginRepo) : ViewModel() {
 
     class Factory @Inject constructor(private val plexLoginRepo: IPlexLoginRepo) :
@@ -24,14 +23,13 @@ class LoginViewModel(private val plexLoginRepo: IPlexLoginRepo) : ViewModel() {
         }
     }
 
-
     private var _authEvent = MutableLiveData<Event<OAuthResponse?>>()
     val authEvent: LiveData<Event<OAuthResponse?>>
         get() = _authEvent
 
     private var hasLaunched = false
 
-    val isLoading = Transformations.map(plexLoginRepo.loginEvent) { loginState ->
+    val isLoading = plexLoginRepo.loginEvent.map { loginState ->
         return@map loginState.peekContent() == IPlexLoginRepo.LoginState.AWAITING_LOGIN_RESULTS
     }
 

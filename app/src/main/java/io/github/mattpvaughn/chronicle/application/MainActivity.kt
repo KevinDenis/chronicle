@@ -44,7 +44,6 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
-
 @ActivityScope
 class MainActivity : AppCompatActivity() {
 
@@ -112,15 +111,21 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
         }
 
-        binding.bottomNav.setOnNavigationItemSelectedListener {
+        // TODO: show/hide this item on launch more performantly
+        viewModel.hasCollections.observe(this) {
+            binding.bottomNav.menu.findItem(R.id.nav_collections).isVisible = it
+        }
+
+        binding.bottomNav.setOnItemSelectedListener {
             when (it.itemId) {
                 R.id.nav_settings -> navigator.showSettings()
                 R.id.nav_library -> navigator.showLibrary()
+                R.id.nav_collections -> navigator.showCollections()
                 R.id.nav_home -> navigator.showHome()
                 else -> throw NoWhenBranchMatchedException("Unknown bottom tab id: ${it.itemId}")
             }
             viewModel.minimizeCurrentlyPlaying()
-            return@setOnNavigationItemSelectedListener true
+            return@setOnItemSelectedListener true
         }
 
         if (savedInstanceState == null) {
@@ -171,19 +176,22 @@ class MainActivity : AppCompatActivity() {
         )
         transaction.commit()
         val handle = findViewById<View>(R.id.currently_playing_handle)
-        val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onScroll(
-                e1: MotionEvent?,
-                e2: MotionEvent?,
-                distanceX: Float,
-                distanceY: Float
-            ): Boolean {
-                if (distanceY > distanceX) {
-                    viewModel.onCurrentlyPlayingHandleDragged()
+        val gd = GestureDetector(
+            this,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onScroll(
+                    e1: MotionEvent,
+                    e2: MotionEvent,
+                    distanceX: Float,
+                    distanceY: Float
+                ): Boolean {
+                    if (distanceY > distanceX) {
+                        viewModel.onCurrentlyPlayingHandleDragged()
+                    }
+                    return super.onScroll(e1, e2, distanceX, distanceY)
                 }
-                return super.onScroll(e1, e2, distanceX, distanceY)
             }
-        })
+        )
         handle.setOnTouchListener { v, event ->
             gd.onTouchEvent(event)
             v.onTouchEvent(event)
@@ -237,7 +245,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
 
     private val onPlaybackError = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {

@@ -63,7 +63,8 @@ class LibraryFragment : Fragment() {
     var adapter: AudiobookAdapter? = null
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
         Timber.i("Lib frag view create")
@@ -80,7 +81,8 @@ class LibraryFragment : Fragment() {
                 override fun onClick(audiobook: Audiobook) {
                     openAudiobookDetails(audiobook)
                 }
-            }).apply {
+            }
+        ).apply {
             stateRestorationPolicy = StateRestorationPolicy.PREVENT_WHEN_EMPTY
         }
 
@@ -182,15 +184,15 @@ class LibraryFragment : Fragment() {
 
         val behavior = (binding.filterView.layoutParams) as CoordinatorLayout.LayoutParams
         (behavior.behavior as BottomSheetBehavior).addBottomSheetCallback(object :
-            BottomSheetBehavior.BottomSheetCallback() {
-            override fun onSlide(bottomSheet: View, slideOffset: Float) {}
-            override fun onStateChanged(bottomSheet: View, newState: Int) {
-                // ignore in-between states
-                if (newState == STATE_EXPANDED || newState == STATE_HIDDEN) {
-                    viewModel.setFilterMenuVisible(newState == STATE_EXPANDED)
+                BottomSheetBehavior.BottomSheetCallback() {
+                override fun onSlide(bottomSheet: View, slideOffset: Float) {}
+                override fun onStateChanged(bottomSheet: View, newState: Int) {
+                    // ignore in-between states
+                    if (newState == STATE_EXPANDED || newState == STATE_HIDDEN) {
+                        viewModel.setFilterMenuVisible(newState == STATE_EXPANDED)
+                    }
                 }
-            }
-        })
+            })
 
         viewModel.isFilterShown.observe(viewLifecycleOwner) { isFilterShown ->
             Timber.i("Showing filter view: $isFilterShown")
@@ -227,14 +229,14 @@ class LibraryFragment : Fragment() {
         val cacheItem = menu.findItem(R.id.download_all) as MenuItem
 
         searchItem.setOnActionExpandListener(object : MenuItem.OnActionExpandListener {
-            override fun onMenuItemActionExpand(item: MenuItem?): Boolean {
+            override fun onMenuItemActionExpand(item: MenuItem): Boolean {
                 filterItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
                 cacheItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
                 viewModel.setSearchActive(true)
                 return true
             }
 
-            override fun onMenuItemActionCollapse(item: MenuItem?): Boolean {
+            override fun onMenuItemActionCollapse(item: MenuItem): Boolean {
                 filterItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
                 cacheItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
                 viewModel.setSearchActive(false)
@@ -280,7 +282,6 @@ class LibraryFragment : Fragment() {
         }
         return super.onOptionsItemSelected(item)
     }
-
 
     interface AudiobookClick {
         fun onClick(audiobook: Audiobook)

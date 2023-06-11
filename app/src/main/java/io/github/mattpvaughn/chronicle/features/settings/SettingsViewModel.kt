@@ -11,6 +11,7 @@ import io.github.mattpvaughn.chronicle.BuildConfig
 import io.github.mattpvaughn.chronicle.R
 import io.github.mattpvaughn.chronicle.application.FEATURE_FLAG_IS_AUTO_ENABLED
 import io.github.mattpvaughn.chronicle.application.Injector
+import io.github.mattpvaughn.chronicle.data.local.CollectionsRepository
 import io.github.mattpvaughn.chronicle.data.local.IBookRepository
 import io.github.mattpvaughn.chronicle.data.local.ITrackRepository
 import io.github.mattpvaughn.chronicle.data.local.PrefsRepo
@@ -53,6 +54,7 @@ class SettingsViewModel(
     private val plexConfig: PlexConfig,
     private val workManager: WorkManager,
     private val plexPrefs: PlexPrefsRepo,
+    private val collectionsRepository: CollectionsRepository
 ) : ViewModel() {
 
     @Suppress("UNCHECKED_CAST")
@@ -66,8 +68,9 @@ class SettingsViewModel(
         private val plexConfig: PlexConfig,
         private val workManager: WorkManager,
         private val plexPrefs: PlexPrefsRepo,
+        private val collectionsRepository: CollectionsRepository
     ) : ViewModelProvider.Factory {
-        override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
                 return SettingsViewModel(
                     bookRepository = bookRepository,
@@ -78,7 +81,8 @@ class SettingsViewModel(
                     cachedFileManager = cachedFileManager,
                     plexConfig = plexConfig,
                     workManager = workManager,
-                    plexPrefs = plexPrefs
+                    plexPrefs = plexPrefs,
+                    collectionsRepository = collectionsRepository
                 ) as T
             } else {
                 throw IllegalArgumentException("Cannot instantiate $modelClass from SettingsViewModel.Factory")
@@ -206,7 +210,8 @@ class SettingsViewModel(
                                     }
                                     setBottomSheetVisibility(false)
                                 }
-                            })
+                            }
+                        )
                     }
                 }
             ),
@@ -265,31 +270,42 @@ class SettingsViewModel(
                                 override fun onItemClicked(formattableString: FormattableString) {
                                     check(formattableString is FormattableString.ResourceString)
                                     when (formattableString.stringRes) {
-                                        R.string.settings_refresh_rate_always -> prefsRepo.refreshRateMinutes =
-                                            0
-                                        R.string.settings_refresh_rate_15_minutes -> prefsRepo.refreshRateMinutes =
-                                            15
-                                        R.string.settings_refresh_rate_1_hour -> prefsRepo.refreshRateMinutes =
-                                            60
-                                        R.string.settings_refresh_rate_3_hours -> prefsRepo.refreshRateMinutes =
-                                            180
-                                        R.string.settings_refresh_rate_6_hours -> prefsRepo.refreshRateMinutes =
-                                            360
-                                        R.string.settings_refresh_rate_1_day -> prefsRepo.refreshRateMinutes =
-                                            60 * 24
-                                        R.string.settings_refresh_rate_3_days -> prefsRepo.refreshRateMinutes =
-                                            60 * 24 * 3
-                                        R.string.settings_refresh_rate_1_week -> prefsRepo.refreshRateMinutes =
-                                            60 * 24 * 7
-                                        R.string.settings_refresh_rate_manual -> prefsRepo.refreshRateMinutes =
-                                            Long.MAX_VALUE
+                                        R.string.settings_refresh_rate_always ->
+                                            prefsRepo.refreshRateMinutes =
+                                                0
+                                        R.string.settings_refresh_rate_15_minutes ->
+                                            prefsRepo.refreshRateMinutes =
+                                                15
+                                        R.string.settings_refresh_rate_1_hour ->
+                                            prefsRepo.refreshRateMinutes =
+                                                60
+                                        R.string.settings_refresh_rate_3_hours ->
+                                            prefsRepo.refreshRateMinutes =
+                                                180
+                                        R.string.settings_refresh_rate_6_hours ->
+                                            prefsRepo.refreshRateMinutes =
+                                                360
+                                        R.string.settings_refresh_rate_1_day ->
+                                            prefsRepo.refreshRateMinutes =
+                                                60 * 24
+                                        R.string.settings_refresh_rate_3_days ->
+                                            prefsRepo.refreshRateMinutes =
+                                                60 * 24 * 3
+                                        R.string.settings_refresh_rate_1_week ->
+                                            prefsRepo.refreshRateMinutes =
+                                                60 * 24 * 7
+                                        R.string.settings_refresh_rate_manual ->
+                                            prefsRepo.refreshRateMinutes =
+                                                Long.MAX_VALUE
                                         else -> throw NoWhenBranchMatchedException("Unknown item: ${formattableString.stringRes}")
                                     }
                                     setBottomSheetVisibility(false)
                                 }
-                            })
+                            }
+                        )
                     }
-                }),
+                }
+            ),
             PreferenceModel(
                 type = PreferenceType.CLICKABLE,
                 title = FormattableString.ResourceString(
@@ -331,9 +347,11 @@ class SettingsViewModel(
                                     }
                                     setBottomSheetVisibility(false)
                                 }
-                            })
+                            }
+                        )
                     }
-                }),
+                }
+            ),
             PreferenceModel(
                 type = PreferenceType.CLICKABLE,
                 title = FormattableString.from(R.string.settings_delete_synced_title),
@@ -366,7 +384,8 @@ class SettingsViewModel(
                             }
                         )
                     }
-                }),
+                }
+            ),
             PreferenceModel(
                 PreferenceType.BOOLEAN,
                 FormattableString.from(R.string.settings_offline_mode_title),
@@ -403,6 +422,90 @@ class SettingsViewModel(
                 explanation = FormattableString.from(R.string.settings_pause_on_focus_lost_explanation),
                 key = PrefsRepo.KEY_PAUSE_ON_FOCUS_LOST,
                 defaultValue = prefsRepo.pauseOnFocusLost
+            ),
+            PreferenceModel(
+                type = PreferenceType.CLICKABLE,
+                title = FormattableString.ResourceString(
+                    stringRes = R.string.settings_jump_forward_value,
+                    // feels gross
+                    placeHolderStrings = listOf(
+                        "${prefsRepo.jumpForwardSeconds} " + Injector.get()
+                            .applicationContext().resources.getString(R.string.seconds)
+                    )
+                ),
+                explanation = FormattableString.from(R.string.settings_jump_forward_explanation),
+                click = object : PreferenceClick {
+                    override fun onClick() {
+                        showOptionsMenu(
+                            options = listOf(
+                                FormattableString.from(R.string.settings_jump_10_seconds),
+                                FormattableString.from(R.string.settings_jump_15_seconds),
+                                FormattableString.from(R.string.settings_jump_20_seconds),
+                                FormattableString.from(R.string.settings_jump_30_seconds),
+                                FormattableString.from(R.string.settings_jump_60_seconds),
+                                FormattableString.from(R.string.settings_jump_90_seconds)
+                            ),
+                            title = FormattableString.from(R.string.settings_jump_forward_title),
+                            listener = object : BottomChooserItemListener() {
+                                override fun onItemClicked(formattableString: FormattableString) {
+                                    check(formattableString is FormattableString.ResourceString)
+                                    prefsRepo.jumpForwardSeconds = when (formattableString.stringRes) {
+                                        R.string.settings_jump_10_seconds -> 10L
+                                        R.string.settings_jump_15_seconds -> 15L
+                                        R.string.settings_jump_20_seconds -> 20L
+                                        R.string.settings_jump_30_seconds -> 30L
+                                        R.string.settings_jump_60_seconds -> 60L
+                                        R.string.settings_jump_90_seconds -> 90L
+                                        else -> 30L
+                                    }
+                                    setBottomSheetVisibility(false)
+                                }
+                            }
+                        )
+                    }
+                }
+            ),
+            PreferenceModel(
+                type = PreferenceType.CLICKABLE,
+                title = FormattableString.ResourceString(
+                    stringRes = R.string.settings_jump_backward_value,
+                    // feels gross
+                    placeHolderStrings = listOf(
+                        "${prefsRepo.jumpBackwardSeconds} " + Injector.get()
+                            .applicationContext().resources.getString(R.string.seconds)
+                    )
+                ),
+                explanation = FormattableString.from(R.string.settings_jump_backward_explanation),
+                click = object : PreferenceClick {
+                    override fun onClick() {
+                        showOptionsMenu(
+                            options = listOf(
+                                FormattableString.from(R.string.settings_jump_10_seconds),
+                                FormattableString.from(R.string.settings_jump_15_seconds),
+                                FormattableString.from(R.string.settings_jump_20_seconds),
+                                FormattableString.from(R.string.settings_jump_30_seconds),
+                                FormattableString.from(R.string.settings_jump_60_seconds),
+                                FormattableString.from(R.string.settings_jump_90_seconds)
+                            ),
+                            title = FormattableString.from(R.string.settings_jump_backward_title),
+                            listener = object : BottomChooserItemListener() {
+                                override fun onItemClicked(formattableString: FormattableString) {
+                                    check(formattableString is FormattableString.ResourceString)
+                                    prefsRepo.jumpBackwardSeconds = when (formattableString.stringRes) {
+                                        R.string.settings_jump_10_seconds -> 10L
+                                        R.string.settings_jump_15_seconds -> 15L
+                                        R.string.settings_jump_20_seconds -> 20L
+                                        R.string.settings_jump_30_seconds -> 30L
+                                        R.string.settings_jump_60_seconds -> 60L
+                                        R.string.settings_jump_90_seconds -> 90L
+                                        else -> 10L
+                                    }
+                                    setBottomSheetVisibility(false)
+                                }
+                            }
+                        )
+                    }
+                }
             ),
             PreferenceModel(
                 PreferenceType.TITLE,
@@ -447,7 +550,8 @@ class SettingsViewModel(
                             )
                         }
                     }
-                }),
+                }
+            ),
             PreferenceModel(
                 PreferenceType.CLICKABLE,
                 title = FormattableString.from(R.string.settings_change_server),
@@ -476,7 +580,8 @@ class SettingsViewModel(
                             )
                         }
                     }
-                }),
+                }
+            ),
             PreferenceModel(
                 PreferenceType.CLICKABLE,
                 title = FormattableString.from(R.string.settings_change_user),
@@ -505,7 +610,8 @@ class SettingsViewModel(
                             )
                         }
                     }
-                }),
+                }
+            ),
             PreferenceModel(
                 PreferenceType.CLICKABLE,
                 title = FormattableString.from(R.string.settings_log_out),
@@ -539,7 +645,8 @@ class SettingsViewModel(
                         }
                         Timber.i("Logging out")
                     }
-                }),
+                }
+            ),
             PreferenceModel(
                 PreferenceType.TITLE,
                 FormattableString.from(R.string.settings_category_etc)
@@ -552,7 +659,23 @@ class SettingsViewModel(
                     override fun onClick() {
                         _webLink.postEvent("https://www.reddit.com/r/ChronicleApp")
                     }
-                }),
+                }
+            ),
+            PreferenceModel(
+                type = PreferenceType.CLICKABLE,
+                title = FormattableString.from(R.string.settings_github_title),
+                explanation = FormattableString.from(R.string.settings_github_explanation),
+                click = object : PreferenceClick {
+                    override fun onClick() {
+                        _webLink.postEvent("https://github.com/mattttvaughn/chronicle")
+                    }
+                }
+            ),
+            PreferenceModel(
+                type = PreferenceType.CLICKABLE,
+                title = FormattableString.from(R.string.settings_version_title),
+                explanation = FormattableString.from(BuildConfig.VERSION_NAME),
+            ),
             PreferenceModel(
                 type = PreferenceType.CLICKABLE,
                 title = FormattableString.from(R.string.settings_licenses_title),
@@ -561,7 +684,8 @@ class SettingsViewModel(
                     override fun onClick() {
                         _showLicenseActivity.postValue(true)
                     }
-                })
+                }
+            )
         )
 
         if (BuildConfig.DEBUG) {
@@ -578,7 +702,8 @@ class SettingsViewModel(
                             override fun onClick() {
                                 prefsRepo.clearAll()
                             }
-                        }),
+                        }
+                    ),
                     PreferenceModel(
                         PreferenceType.CLICKABLE,
                         FormattableString.from(string = "Clear DB"),
@@ -586,7 +711,8 @@ class SettingsViewModel(
                             override fun onClick() {
                                 clearConfig(clearDownloads = false)
                             }
-                        }),
+                        }
+                    ),
                     PreferenceModel(
                         PreferenceType.CLICKABLE,
                         FormattableString.from(string = "Clear cached images"),
@@ -598,7 +724,8 @@ class SettingsViewModel(
                                     }
                                 }
                             }
-                        }),
+                        }
+                    ),
                     PreferenceModel(
                         PreferenceType.BOOLEAN,
                         FormattableString.from(string = "Disable local progress tracking"),
@@ -645,7 +772,6 @@ class SettingsViewModel(
             ExistingWorkPolicy.REPLACE,
             worker
         ).enqueue()
-
     }
 
     private enum class NavigationDestination {
@@ -671,6 +797,7 @@ class SettingsViewModel(
             withContext(Dispatchers.IO) {
                 bookRepository.clear()
                 trackRepository.clear()
+                collectionsRepository.clear()
             }
             mediaServiceConnection.transportControls?.stop()
             when (navigateTo) {
@@ -692,5 +819,4 @@ class SettingsViewModel(
     fun setShowLicenseActivity(showLicense: Boolean) {
         _showLicenseActivity.postValue(showLicense)
     }
-
 }

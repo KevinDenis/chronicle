@@ -1,10 +1,10 @@
 package io.github.mattpvaughn.chronicle.data.model
 
+import android.text.format.DateUtils
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
 import io.github.mattpvaughn.chronicle.data.local.ITrackRepository.Companion.TRACK_NOT_FOUND
-
 
 @Entity
 data class Chapter constructor(
@@ -21,6 +21,13 @@ data class Chapter constructor(
     val trackId: Long = TRACK_NOT_FOUND.toLong(),
     val bookId: Long = NO_AUDIOBOOK_FOUND_ID.toLong()
 ) : Comparable<Chapter> {
+
+    val durationStr: String
+        get() = DateUtils.formatElapsedTime(
+            StringBuilder(),
+            (endTimeOffset - startTimeOffset) / 1000
+        )
+
     /** A string representing the index but padded to [length] characters with zeroes */
     fun paddedIndex(length: Int): String {
         return index.toString().padStart(length, '0')
@@ -83,4 +90,3 @@ class ChapterListConverter {
         return chapters.joinToString("®") { "${it.title}©${it.id}©${it.index}©${it.startTimeOffset}©${it.endTimeOffset}©${it.discNumber}©${it.downloaded}©${it.trackId}©${it.bookId}" }
     }
 }
-

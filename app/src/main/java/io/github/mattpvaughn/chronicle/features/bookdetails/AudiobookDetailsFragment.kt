@@ -26,7 +26,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import timber.log.Timber
 import javax.inject.Inject
 
-
 @ExperimentalCoroutinesApi
 class AudiobookDetailsFragment : Fragment() {
 
@@ -68,7 +67,8 @@ class AudiobookDetailsFragment : Fragment() {
     }
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
         Timber.i("AudiobookDetailsFragment onCreateView()")
@@ -86,7 +86,7 @@ class AudiobookDetailsFragment : Fragment() {
             isCached = inputCached
         )
         viewModel =
-            ViewModelProvider(this, viewModelFactory).get(AudiobookDetailsViewModel::class.java)
+            ViewModelProvider(this, viewModelFactory)[AudiobookDetailsViewModel::class.java]
 
         binding.viewModel = viewModel
         binding.lifecycleOwner = viewLifecycleOwner
@@ -163,6 +163,12 @@ class AudiobookDetailsFragment : Fragment() {
                 if (isSyncing) syncIcon.start() else syncIcon.stop()
             }
         }
+
+        viewModel.isWatchedIcon.observe(viewLifecycleOwner) { icon ->
+            Timber.d("isWatchedIcon.observe called")
+            binding.detailsToolbar.menu.findItem(R.id.toggle_watched).setIcon(icon)
+        }
+
         return binding.root
     }
 

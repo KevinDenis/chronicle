@@ -3,6 +3,7 @@ package io.github.mattpvaughn.chronicle.data.sources.plex.model
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import io.github.mattpvaughn.chronicle.data.model.Audiobook
+import io.github.mattpvaughn.chronicle.data.model.Collection
 import io.github.mattpvaughn.chronicle.data.model.MediaItemTrack
 
 @JsonClass(generateAdapter = true)
@@ -17,7 +18,9 @@ data class PlexMediaContainer(
     val metadata: List<PlexDirectory> = emptyList(),
     val mediaProvider: MediaProvider? = null,
     val devices: List<PlexServer> = emptyList(),
-    val size: Long = 0
+    val size: Long = 0,
+    val totalSize: Long = 0,
+    val offset: Long = 0
 )
 
 @JsonClass(generateAdapter = true)
@@ -29,4 +32,8 @@ fun PlexMediaContainer.asAudiobooks(): List<Audiobook> {
 
 fun PlexMediaContainer.asTrackList(): List<MediaItemTrack> {
     return metadata.asMediaItemTracks()
+}
+
+fun PlexMediaContainer.asCollections(): List<Collection> {
+    return metadata.map { Collection.from(it) }
 }

@@ -12,6 +12,8 @@ import io.github.mattpvaughn.chronicle.features.bookdetails.AudiobookDetailsFrag
 import io.github.mattpvaughn.chronicle.features.bookdetails.AudiobookDetailsFragment.Companion.ARG_AUDIOBOOK_ID
 import io.github.mattpvaughn.chronicle.features.bookdetails.AudiobookDetailsFragment.Companion.ARG_AUDIOBOOK_TITLE
 import io.github.mattpvaughn.chronicle.features.bookdetails.AudiobookDetailsFragment.Companion.ARG_IS_AUDIOBOOK_CACHED
+import io.github.mattpvaughn.chronicle.features.collections.CollectionDetailsFragment
+import io.github.mattpvaughn.chronicle.features.collections.CollectionsFragment
 import io.github.mattpvaughn.chronicle.features.home.HomeFragment
 import io.github.mattpvaughn.chronicle.features.library.LibraryFragment
 import io.github.mattpvaughn.chronicle.features.login.ChooseLibraryFragment
@@ -41,24 +43,27 @@ class Navigator @Inject constructor(
 
     init {
         // never remove observer, but this is a singleton so it's okay
-        plexLoginRepo.loginEvent.observe(activity, Observer { event ->
-            if (event.hasBeenHandled) {
-                return@Observer
-            }
-            Timber.i("Login event changed to ${event.peekContent()}")
-            when (event.getContentIfNotHandled()) {
-                LOGGED_IN_NO_USER_CHOSEN -> showUserChooser()
-                LOGGED_IN_NO_SERVER_CHOSEN -> showServerChooser()
-                LOGGED_IN_NO_LIBRARY_CHOSEN -> showLibraryChooser()
-                LOGGED_IN_FULLY -> showHome()
-                FAILED_TO_LOG_IN -> {
+        plexLoginRepo.loginEvent.observe(
+            activity,
+            Observer { event ->
+                if (event.hasBeenHandled) {
+                    return@Observer
                 }
-                NOT_LOGGED_IN -> showLogin()
-                AWAITING_LOGIN_RESULTS -> {
+                Timber.i("Login event changed to ${event.peekContent()}")
+                when (event.getContentIfNotHandled()) {
+                    LOGGED_IN_NO_USER_CHOSEN -> showUserChooser()
+                    LOGGED_IN_NO_SERVER_CHOSEN -> showServerChooser()
+                    LOGGED_IN_NO_LIBRARY_CHOSEN -> showLibraryChooser()
+                    LOGGED_IN_FULLY -> showHome()
+                    FAILED_TO_LOG_IN -> {
+                    }
+                    NOT_LOGGED_IN -> showLogin()
+                    AWAITING_LOGIN_RESULTS -> {
+                    }
+                    else -> throw NoWhenBranchMatchedException("Unknown login event: $event")
                 }
-                else -> throw NoWhenBranchMatchedException("Unknown login event: $event")
             }
-        })
+        )
     }
 
     fun showLogin() {
@@ -96,7 +101,6 @@ class Navigator @Inject constructor(
             .commit()
     }
 
-
     fun showHome() {
         clearBackStack()
         // don't re-add home frag if it's already showing
@@ -121,6 +125,12 @@ class Navigator @Inject constructor(
         fragmentManager.beginTransaction().replace(R.id.fragNavHost, libraryFragment).commit()
     }
 
+    fun showCollections() {
+        clearBackStack()
+        val collectionsFragment = CollectionsFragment.newInstance()
+        fragmentManager.beginTransaction().replace(R.id.fragNavHost, collectionsFragment).commit()
+    }
+
     fun showSettings() {
         clearBackStack()
         val settingsFragment = SettingsFragment.newInstance()
@@ -139,6 +149,14 @@ class Navigator @Inject constructor(
         fragmentManager.beginTransaction()
             .replace(R.id.fragNavHost, detailsFrag)
             .addToBackStack(AudiobookDetailsFragment.TAG)
+            .commit()
+    }
+
+    fun showCollectionDetails(collectionId: Int) {
+        val collectionDetails = CollectionDetailsFragment.newInstance(collectionId)
+        fragmentManager.beginTransaction()
+            .replace(R.id.fragNavHost, collectionDetails)
+            .addToBackStack(CollectionDetailsFragment.TAG)
             .commit()
     }
 
@@ -182,7 +200,6 @@ class Navigator @Inject constructor(
                 true
             }
         }
-
     }
 
     private fun isFragmentWithTagVisible(tag: String): Boolean {

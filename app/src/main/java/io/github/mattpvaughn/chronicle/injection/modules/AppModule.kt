@@ -8,7 +8,6 @@ import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.work.WorkManager
-import com.android.billingclient.api.BillingClient
 import com.facebook.imagepipeline.backends.okhttp3.BuildConfig
 import com.facebook.imagepipeline.backends.okhttp3.OkHttpImagePipelineConfigFactory
 import com.facebook.imagepipeline.cache.DefaultCacheKeyFactory
@@ -19,7 +18,6 @@ import com.tonyodev.fetch2.Fetch
 import com.tonyodev.fetch2.FetchConfiguration
 import dagger.Module
 import dagger.Provides
-import io.github.mattpvaughn.chronicle.application.ChronicleBillingManager
 import io.github.mattpvaughn.chronicle.application.LOG_NETWORK_REQUESTS
 import io.github.mattpvaughn.chronicle.data.local.*
 import io.github.mattpvaughn.chronicle.data.sources.plex.*
@@ -77,6 +75,10 @@ class AppModule(private val app: Application) {
     @Provides
     @Singleton
     fun provideBookRepo(bookRepository: BookRepository): IBookRepository = bookRepository
+
+    @Provides
+    @Singleton
+    fun provideCollectionsDao(): CollectionsDao = getCollectionsDatabase(app.applicationContext).collectionsDao
 
     @Provides
     @Singleton
@@ -189,14 +191,6 @@ class AppModule(private val app: Application) {
 
     @Provides
     @Singleton
-    fun billingClient(billingManager: ChronicleBillingManager): BillingClient {
-        return BillingClient.newBuilder(app.applicationContext)
-            .enablePendingPurchases()
-            .setListener(billingManager).build()
-    }
-
-    @Provides
-    @Singleton
     fun exceptionHandler(): CoroutineExceptionHandler = CoroutineExceptionHandler { _, e ->
         Timber.e("Caught unhandled exception! $e")
     }
@@ -268,6 +262,4 @@ class AppModule(private val app: Application) {
                 emptySet()
             }
         ).build()
-
-
 }

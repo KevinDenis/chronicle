@@ -4,6 +4,7 @@ import android.app.Service
 import android.hardware.SensorManager
 import android.media.ToneGenerator
 import android.os.Handler
+import android.os.Looper
 import android.support.v4.media.session.MediaControllerCompat
 import android.widget.Toast
 import com.squareup.seismic.ShakeDetector
@@ -14,7 +15,6 @@ import io.github.mattpvaughn.chronicle.util.showToast
 import io.github.mattpvaughn.chronicle.views.BottomSheetChooser
 import timber.log.Timber
 import javax.inject.Inject
-
 
 /**
  * A countdown timer which pauses playback at the end of countdown.
@@ -54,23 +54,25 @@ class SimpleSleepTimer @Inject constructor(
 
     private val sleepTimerUpdateFrequencyMs = 1000L
     private var sleepTimeRemaining = 0L
-    private val sleepTimerHandler = Handler()
+    private val sleepTimerHandler = Handler(Looper.getMainLooper())
     private val updateSleepTimerAction = { start(false) }
     private var isActive: Boolean = false
     private val shakeToSnoozeDurationMs = 5 * 60 * 1000L
     private val shakeOccurredSoundDurationMs = 150
-    private val shakeDetector = ShakeDetector(ShakeDetector.Listener {
-        Timber.i("Shake detected. Extending")
-        if (prefsRepo.shakeToSnooze) {
-            extend(shakeToSnoozeDurationMs)
-            toneGenerator.startTone(ToneGenerator.TONE_CDMA_PIP, shakeOccurredSoundDurationMs)
-            showToast(
-                service,
-                BottomSheetChooser.FormattableString.from(R.string.sleep_timer_extended_message),
-                Toast.LENGTH_SHORT
-            )
+    private val shakeDetector = ShakeDetector(
+        ShakeDetector.Listener {
+            Timber.i("Shake detected. Extending")
+            if (prefsRepo.shakeToSnooze) {
+                extend(shakeToSnoozeDurationMs)
+                toneGenerator.startTone(ToneGenerator.TONE_CDMA_PIP, shakeOccurredSoundDurationMs)
+                showToast(
+                    service,
+                    BottomSheetChooser.FormattableString.from(R.string.sleep_timer_extended_message),
+                    Toast.LENGTH_SHORT
+                )
+            }
         }
-    })
+    )
 
     // TODO: handle changes to playback speed?
     override fun handleAction(action: SleepTimer.SleepTimerAction, durationMillis: Long) {
@@ -84,7 +86,6 @@ class SimpleSleepTimer @Inject constructor(
             }
         }
     }
-
 
     override fun cancel() {
         // no need to broadcast a cancel, the cancel has to come from the UI, and the UI for the
@@ -104,7 +105,7 @@ class SimpleSleepTimer @Inject constructor(
             return
         }
         if (justStarting) {
-            shakeDetector.start(sensorManager)
+            shakeDetector.start(sensorManager, SensorManager.SENSOR_DELAY_GAME)
         }
         Timber.i("Sleep timer tick: $sleepTimeRemaining ms remaining")
         if (sleepTimeRemaining > 0L) {
@@ -128,6 +129,4 @@ class SimpleSleepTimer @Inject constructor(
         Timber.i("Sleep timer extended by $extensionDurationMS milliseconds")
         sleepTimeRemaining += extensionDurationMS
     }
-
 }
-

@@ -48,7 +48,7 @@ class DownloadNotificationWorker(
         applicationContext,
         ACTION_CANCEL_ALL_DOWNLOADS_ID,
         cancelAllIntent,
-        0
+        PendingIntent.FLAG_IMMUTABLE
     )
     private val actionCancelAll = NotificationCompat.Action.Builder(
         R.drawable.fetch_notification_cancel,
@@ -105,7 +105,6 @@ class DownloadNotificationWorker(
             }
         }
 
-
         return@withContext Result.success()
     }
 
@@ -137,9 +136,9 @@ class DownloadNotificationWorker(
                 }.distinct()
             )
         }.filter {
-            it.bookName.isNotEmpty()
-                    && it.bookId != NO_AUDIOBOOK_FOUND_ID
-                    && (it.status in listOf(Status.FAILED, Status.COMPLETED))
+            it.bookName.isNotEmpty() &&
+                it.bookId != NO_AUDIOBOOK_FOUND_ID &&
+                (it.status in listOf(Status.FAILED, Status.COMPLETED))
         }
 
         if (bookStatuses.isNotEmpty()) {
@@ -170,7 +169,6 @@ class DownloadNotificationWorker(
         val status: Status,
         val errors: List<String>
     )
-
 
     /** Creates a notification channel if required by the given version of Android SDK */
     private fun createNotificationChannelAsNeeded() {
@@ -249,7 +247,7 @@ class DownloadNotificationWorker(
 
         return NotificationCompat.Builder(applicationContext, DOWNLOAD_CHANNEL)
             .setContentTitle(finishedTitle)
-            //set content text to support devices running API level < 24
+            // set content text to support devices running API level < 24
             .setContentText(finishedContent)
             .setSmallIcon(resultIcon)
             .setStyle(finishedDownloadList)
@@ -275,7 +273,8 @@ class DownloadNotificationWorker(
                 Status.FAILED -> R.string.download_failed_notification_content
                 Status.COMPLETED -> R.string.download_successful_notification_content
                 else -> return null
-            }, bookName
+            },
+            bookName
         )
 
         val content = if (downloadResult.errors.isEmpty()) {
@@ -382,7 +381,7 @@ class DownloadNotificationWorker(
 
         return NotificationCompat.Builder(applicationContext, DOWNLOAD_CHANNEL)
             .setContentTitle(downloadSummary)
-            //set content text to support devices running API level < 24
+            // set content text to support devices running API level < 24
             .setContentText(downloadsToShow.firstOrNull() ?: "")
             .setSmallIcon(R.drawable.ic_cloud_download_white)
             .setStyle(downloadsList)
@@ -412,7 +411,7 @@ class DownloadNotificationWorker(
             Intent(ACTION_CANCEL_BOOK_DOWNLOAD).apply {
                 putExtra(KEY_BOOK_ID, bookId)
             },
-            PendingIntent.FLAG_UPDATE_CURRENT
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val openBookPendingIntent = makeOpenBookPendingIntent(bookId)
@@ -442,7 +441,7 @@ class DownloadNotificationWorker(
             applicationContext,
             REQUEST_CODE_PREFIX_OPEN_ACTIVITY_TO_AUDIOBOOK_WITH_ID + bookId,
             intent,
-            0
+            PendingIntent.FLAG_IMMUTABLE
         )
     }
 
@@ -484,7 +483,5 @@ class DownloadNotificationWorker(
                 worker
             ).enqueue()
         }
-
     }
-
 }

@@ -6,6 +6,7 @@ import android.support.v4.media.session.PlaybackStateCompat.STATE_NONE
 import android.support.v4.media.session.PlaybackStateCompat.STATE_STOPPED
 import androidx.lifecycle.*
 import io.github.mattpvaughn.chronicle.application.MainActivityViewModel.BottomSheetState.*
+import io.github.mattpvaughn.chronicle.data.local.CollectionsRepository
 import io.github.mattpvaughn.chronicle.data.local.IBookRepository
 import io.github.mattpvaughn.chronicle.data.local.ITrackRepository
 import io.github.mattpvaughn.chronicle.data.model.*
@@ -22,12 +23,12 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
-
 class MainActivityViewModel(
     loginRepo: IPlexLoginRepo,
     private val trackRepository: ITrackRepository,
     private val bookRepository: IBookRepository,
     private val mediaServiceConnection: MediaServiceConnection,
+    collectionsRepository: CollectionsRepository
 ) : ViewModel(), MainActivity.CurrentlyPlayingInterface {
 
     @Suppress("UNCHECKED_CAST")
@@ -36,15 +37,17 @@ class MainActivityViewModel(
         private val trackRepository: ITrackRepository,
         private val bookRepository: IBookRepository,
         private val mediaServiceConnection: MediaServiceConnection,
+        private val collectionsRepository: CollectionsRepository
     ) : ViewModelProvider.Factory {
 
-        override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(MainActivityViewModel::class.java)) {
                 return MainActivityViewModel(
                     loginRepo,
                     trackRepository,
                     bookRepository,
-                    mediaServiceConnection
+                    mediaServiceConnection,
+                    collectionsRepository
                 ) as T
             } else {
                 throw IllegalArgumentException("Cannot instantiate $modelClass from MainActivityViewModel.Factory")
@@ -59,7 +62,7 @@ class MainActivityViewModel(
         EXPANDED
     }
 
-    val isLoggedIn = Transformations.map(loginRepo.loginEvent) {
+    val isLoggedIn = loginRepo.loginEvent.map {
         it.peekContent() == LOGGED_IN_FULLY
     }
 
@@ -73,7 +76,7 @@ class MainActivityViewModel(
         bookRepository.getAudiobookAsync(id) ?: EMPTY_AUDIOBOOK
     }
 
-    private var tracks = Transformations.switchMap(audiobookId) { id ->
+    private var tracks = audiobookId.switchMap { id ->
         if (id != NO_AUDIOBOOK_FOUND_ID) {
             trackRepository.getTracksForAudiobook(id)
         } else {
@@ -84,6 +87,8 @@ class MainActivityViewModel(
     private var _errorMessage = MutableLiveData<Event<String>>()
     val errorMessage: LiveData<Event<String>>
         get() = _errorMessage
+
+    val hasCollections = collectionsRepository.hasCollections()
 
     // Used to cache tracks.asChapterList when tracks changes
     private val tracksAsChaptersCache = mapAsync(tracks, viewModelScope) {
@@ -101,7 +106,7 @@ class MainActivityViewModel(
         }
     }
 
-    val currentChapterTitle= DoubleLiveData(tracks, chapters) { _tracks, _chapters ->
+    val currentChapterTitle = DoubleLiveData(tracks, chapters) { _tracks, _chapters ->
         if (_chapters.isNullOrEmpty() || _tracks.isNullOrEmpty()) {
             return@DoubleLiveData "No track playing"
         }
@@ -112,7 +117,7 @@ class MainActivityViewModel(
         }.getChapterAt(_tracks.getActiveTrack().id.toLong(), currentTrackProgress).title
     }
 
-    val isPlaying = Transformations.map(mediaServiceConnection.playbackState) {
+    val isPlaying = mediaServiceConnection.playbackState.map {
         it.isPlaying
     }
 
@@ -157,7 +162,6 @@ class MainActivityViewModel(
         }
     }
 
-
     /**
      * React to clicks on the "currently playing" modal, which is shown at the bottom of the
      * R.layout.activity_main view when media is active (can be playing or paused)
@@ -167,6 +171,7 @@ class MainActivityViewModel(
             COLLAPSED -> _currentlyPlayingLayoutState.postValue(EXPANDED)
             EXPANDED -> _currentlyPlayingLayoutState.postValue(COLLAPSED)
             HIDDEN -> throw IllegalStateException("Cannot click on hidden sheet!")
+            else -> {}
         }
     }
 
@@ -203,7 +208,6 @@ class MainActivityViewModel(
         _currentlyPlayingLayoutState.postValue(state)
     }
 
-
     fun showUserMessage(errorMessage: String) {
         Timber.i("Showing error message: $errorMessage")
         _errorMessage.postEvent(errorMessage)
@@ -229,4 +233,3 @@ class MainActivityViewModel(
         }
     }
 }
-

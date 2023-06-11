@@ -5,9 +5,12 @@ import android.media.session.PlaybackState.*
 import android.os.Bundle
 import android.support.v4.media.session.PlaybackStateCompat
 import android.text.format.DateUtils
+import android.view.Gravity
+import android.widget.Toast
 import androidx.lifecycle.*
 import com.github.michaelbull.result.Ok
 import io.github.mattpvaughn.chronicle.R
+import io.github.mattpvaughn.chronicle.application.Injector
 import io.github.mattpvaughn.chronicle.data.local.IBookRepository
 import io.github.mattpvaughn.chronicle.data.local.ITrackRepository
 import io.github.mattpvaughn.chronicle.data.local.ITrackRepository.Companion.TRACK_NOT_FOUND
@@ -64,7 +67,7 @@ class AudiobookDetailsViewModel(
         private val currentlyPlaying: CurrentlyPlaying
     ) : ViewModelProvider.Factory {
         lateinit var inputAudiobook: Audiobook
-        override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
             check(this::inputAudiobook.isInitialized) { "Input audiobook not provided!" }
             if (modelClass.isAssignableFrom(AudiobookDetailsViewModel::class.java)) {
                 return AudiobookDetailsViewModel(
@@ -126,7 +129,7 @@ class AudiobookDetailsViewModel(
         }
     }
 
-    val cacheIconTint = Transformations.map(cacheStatus) { status ->
+    val cacheIconTint = cacheStatus.map { status ->
         return@map when (status) {
             CACHING -> R.color.icon // Doesn't matter, we show a spinner over it
             NOT_CACHED -> R.color.icon
@@ -135,7 +138,7 @@ class AudiobookDetailsViewModel(
         }
     }
 
-    val cacheIconDrawable: LiveData<Int> = Transformations.map(cacheStatus) { status ->
+    val cacheIconDrawable: LiveData<Int> = cacheStatus.map { status ->
         return@map when (status) {
             CACHING -> R.drawable.ic_cloud_download_white // Doesn't matter, we show a spinner over it
             NOT_CACHED -> R.drawable.ic_cloud_download_white
@@ -150,8 +153,8 @@ class AudiobookDetailsViewModel(
         activeBook,
         audiobook
     ) { activeBook, currentBook ->
-        return@DoubleLiveData activeBook?.id == currentBook?.id
-                && activeBook?.id != null
+        return@DoubleLiveData activeBook?.id == currentBook?.id &&
+            activeBook?.id != null
     }
 
     /** Whether the book in the current view is playing */
@@ -163,13 +166,17 @@ class AudiobookDetailsViewModel(
             return@DoubleLiveData isBookActive ?: false && currState?.isPlaying ?: false
         }
 
-    val progressString = Transformations.map(tracks) { tracks: List<MediaItemTrack> ->
-        if (tracks.isNullOrEmpty()) {
+    val progressString = tracks.map { tracks: List<MediaItemTrack> ->
+        if (tracks.isEmpty()) {
             return@map "0:00/0:00"
         }
         val progressStr = DateUtils.formatElapsedTime(StringBuilder(), tracks.getProgress() / 1000L)
         val durationStr = DateUtils.formatElapsedTime(StringBuilder(), tracks.getDuration() / 1000L)
         return@map "$progressStr/$durationStr"
+    }
+
+    val progressPercentageString = tracks.map { tracks: List<MediaItemTrack> ->
+        return@map "${tracks.getProgressPercentage()}%"
     }
 
     private var _isLoadingTracks = MutableLiveData(false)
@@ -187,7 +194,7 @@ class AudiobookDetailsViewModel(
     val summaryLinesShown: LiveData<Int>
         get() = _summaryLinesShown
 
-    val isAudioLoading = Transformations.map(mediaServiceConnection.playbackState) { state ->
+    val isAudioLoading = mediaServiceConnection.playbackState.map { state ->
         if (state.state == PlaybackStateCompat.STATE_ERROR) {
             Timber.i("Playback state: ${state.stateName}, (${state.errorMessage})")
         } else {
@@ -196,15 +203,15 @@ class AudiobookDetailsViewModel(
         state.state == STATE_BUFFERING || state.state == STATE_CONNECTING
     }
 
-    val showSummary = Transformations.map(audiobook) { book ->
+    val showSummary = audiobook.map { book ->
         book?.summary?.isNotEmpty() ?: false
     }
 
-    val isExpanded = Transformations.map(summaryLinesShown) { lines ->
+    val isExpanded = summaryLinesShown.map { lines ->
         return@map lines == lineCountSummaryMaximized
     }
 
-    val serverConnection = Transformations.map(plexConfig.connectionState) { it }
+    val serverConnection = plexConfig.connectionState.map { it }
 
     fun onToggleSummaryView() {
         _summaryLinesShown.value =
@@ -247,8 +254,7 @@ class AudiobookDetailsViewModel(
         }
     }.asFlow()
 
-    val activeChapter = currentlyPlaying.chapter.combine(cachedChapter)
-    { activeChapter: Chapter, cachedChapter: Chapter ->
+    val activeChapter = currentlyPlaying.chapter.combine(cachedChapter) { activeChapter: Chapter, cachedChapter: Chapter ->
         Timber.i("Cached: $cachedChapter, active: $activeChapter")
         if (activeChapter != EMPTY_CHAPTER && activeChapter.trackId == cachedChapter.trackId) {
             activeChapter
@@ -257,6 +263,9 @@ class AudiobookDetailsViewModel(
         }
     }.asLiveData(viewModelScope.coroutineContext)
 
+    val isWatchedIcon: LiveData<Int> = audiobook.map {
+        if (it?.viewCount != 0L) R.drawable.ic_visibility_off else R.drawable.ic_visibility
+    }
 
     init {
         plexConfig.isConnected.observeForever(networkObserver)
@@ -287,7 +296,7 @@ class AudiobookDetailsViewModel(
                 }
                 _isLoadingTracks.value = false
             } catch (e: Throwable) {
-                Timber.e("Failed to load tracks for audiobook ${bookId}: $e")
+                Timber.e("Failed to load tracks for audiobook $bookId: $e")
                 _isLoadingTracks.value = false
             }
         }
@@ -459,7 +468,8 @@ class AudiobookDetailsViewModel(
                         }
                         hideBottomSheet()
                     }
-                })
+                }
+            )
             return
         }
 
@@ -474,7 +484,6 @@ class AudiobookDetailsViewModel(
             jumpToChapterAction()
         }
     }
-
 
     private fun hideBottomSheet() {
         Timber.i("Hiding bottom sheet?")
@@ -504,14 +513,26 @@ class AudiobookDetailsViewModel(
     }
 
     fun toggleWatched() {
-        val prompt = R.string.prompt_mark_as_watched
+
+        val notPlayedYet = (audiobook.value?.viewCount ?: 0) == 0L
+
+        val prompt = if (notPlayedYet) {
+            R.string.prompt_mark_as_played
+        } else {
+            R.string.prompt_mark_as_unplayed
+        }
+
         showOptionsMenu(
             title = FormattableString.from(prompt),
             options = listOf(FormattableString.yes, FormattableString.no),
             listener = object : BottomChooserItemListener() {
                 override fun onItemClicked(formattableString: FormattableString) {
                     if (formattableString == FormattableString.yes) {
-                        setAudiobookWatched()
+                        if (notPlayedYet) {
+                            setAudiobookWatched()
+                        } else {
+                            setAudiobookUnwatched()
+                        }
                     }
                     hideBottomSheet()
                 }
@@ -527,6 +548,25 @@ class AudiobookDetailsViewModel(
             trackRepository.markTracksInBookAsWatched(inputAudiobook.id)
             bookRepository.setWatched(inputAudiobook.id)
         }
+        val toast = Toast.makeText(
+            Injector.get().applicationContext(), R.string.marked_as_played,
+            Toast.LENGTH_LONG
+        )
+        toast.setGravity(Gravity.BOTTOM, 0, 200)
+        toast.show()
+    }
+
+    private fun setAudiobookUnwatched() {
+        Timber.i("Marking audiobook as unwatched")
+        viewModelScope.launch {
+            bookRepository.setUnwatched(inputAudiobook.id)
+        }
+        val toast = Toast.makeText(
+            Injector.get().applicationContext(), R.string.marked_as_unplayed,
+            Toast.LENGTH_LONG
+        )
+        toast.setGravity(Gravity.BOTTOM, 0, 200)
+        toast.show()
     }
 
     private var _forceSyncInProgress = MutableLiveData(false)
@@ -574,4 +614,3 @@ class AudiobookDetailsViewModel(
         }
     }
 }
-

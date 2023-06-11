@@ -2,6 +2,7 @@ package io.github.mattpvaughn.chronicle.data.sources.plex.model
 
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
+import io.github.mattpvaughn.chronicle.data.model.Collection.Companion.PLEX_COLLECTION_SORT_TYPE_RELEASE_DATE
 import io.github.mattpvaughn.chronicle.data.model.PlexLibrary
 
 /**
@@ -22,6 +23,8 @@ data class PlexDirectory(
     val thumb: String = "",
     val size: Int = 0,
     val summary: String = "",
+    val parentYear: Int = 0,
+    val year: Int = 0,
     val addedAt: Long = 0,
     val updatedAt: Long = 0,
     val viewedLeafCount: Long = 0,
@@ -36,14 +39,21 @@ data class PlexDirectory(
     val parentIndex: Int = 1,
     @Json(name = "Media")
     val media: List<Media> = emptyList(),
-    val viewOffset: Long = 0L
+    val viewOffset: Long = 0L,
+    @Json(name = "Collection")
+    val collections: List<CollectionWrapper>? = null,
+    val childCount: Long = 0L,
+    val collectionSort: String = PLEX_COLLECTION_SORT_TYPE_RELEASE_DATE.toString()
 )
+
+@JsonClass(generateAdapter = true)
+data class CollectionWrapper(val tag: String? = null)
 
 fun PlexDirectory.asLibrary(): PlexLibrary {
     return PlexLibrary(
         name = title,
         type = MediaType.TYPES.find { mediaType -> mediaType.typeString == this.type }
             ?: MediaType.ARTIST,
-        id = key)
+        id = key
+    )
 }
-

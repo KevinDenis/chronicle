@@ -2,6 +2,7 @@ package io.github.mattpvaughn.chronicle.features.player
 
 import android.os.Handler
 import android.support.v4.media.session.MediaControllerCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import androidx.work.*
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector
@@ -22,7 +23,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
-import kotlin.time.minutes
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Responsible for updating playback progress of the current book/track to the local DB and to the
@@ -47,11 +48,14 @@ interface ProgressUpdater {
         forceNetworkUpdate: Boolean
     )
 
+    /** Update progress without providing any parameters */
+    fun updateProgressWithoutParameters()
+
     /** Cancels regular progress updates */
     fun cancel()
 
     companion object {
-        val BOOK_FINISHED_END_OFFSET_MILLIS = 2.minutes.toLongMilliseconds()
+        val BOOK_FINISHED_END_OFFSET_MILLIS = 2.minutes.inWholeMilliseconds
 
         /**
          * The frequency which the remote server is updated at: once for every [NETWORK_CALL_FREQUENCY]
@@ -105,6 +109,24 @@ class SimpleProgressUpdater @Inject constructor(
             }
         }
         handler.postDelayed(updateProgressAction, updateProgressFrequencyMs)
+    }
+
+    override fun updateProgressWithoutParameters() {
+        val controller = mediaController ?: return
+        val playbackState = when (controller.playbackState.state) {
+            PlaybackStateCompat.STATE_PLAYING -> MediaPlayerService.PLEX_STATE_PLAYING
+            PlaybackStateCompat.STATE_PAUSED -> MediaPlayerService.PLEX_STATE_PAUSED
+            PlaybackStateCompat.STATE_STOPPED -> MediaPlayerService.PLEX_STATE_PAUSED
+            else -> ""
+        }
+        val currentTrack = controller.metadata.id?.toInt() ?: return
+        val currentTrackProgress = controller.playbackState.currentPlayBackPosition
+        updateProgress(
+            currentTrack,
+            playbackState,
+            currentTrackProgress,
+            false
+        )
     }
 
     override fun updateProgress(
@@ -184,7 +206,7 @@ class SimpleProgressUpdater @Inject constructor(
             .setConstraints(syncWorkerConstraints)
             .setBackoffCriteria(
                 BackoffPolicy.LINEAR,
-                OneTimeWorkRequest.DEFAULT_BACKOFF_DELAY_MILLIS,
+                WorkRequest.DEFAULT_BACKOFF_DELAY_MILLIS,
                 TimeUnit.MILLISECONDS
             )
             .build()
@@ -221,5 +243,4 @@ class SimpleProgressUpdater @Inject constructor(
     override fun cancel() {
         handler.removeCallbacks(updateProgressAction)
     }
-
 }
